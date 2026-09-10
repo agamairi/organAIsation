@@ -96,6 +96,14 @@ export class PluginRuntime {
   async disable(id: string): Promise<{ ok: boolean; error?: string }> { const record = this.records.get(id); if (!record) return { ok: false, error: 'unknown plugin' }; try { await this.active.get(id)?.deactivate?.(); } catch { /* deactivation may not block containment */ } this.removeContributions(id); this.active.delete(id); record.state = 'disabled'; this.persist(); this.emit('plugin.disabled', { id }); return { ok: true }; }
   async uninstall(id: string): Promise<{ ok: boolean; error?: string }> { const record = this.records.get(id); if (!record) return { ok: false, error: 'unknown plugin' }; await this.disable(id); try { rmSync(join(this.pluginsDir, id), { recursive: true, force: true }); this.records.delete(id); this.persist(); this.emit('plugin.uninstalled', { id }); return { ok: true }; } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; } }
   async health(id: string): Promise<PluginRecord['health'] | null> { const record = this.records.get(id); if (!record) return null; try { const plugin = this.active.get(id) as { health?: () => Promise<{ ok: boolean; detail?: string }> | { ok: boolean; detail?: string } } | undefined; const result = plugin?.health ? await plugin.health() : { ok: record.state === 'enabled', detail: record.state === 'enabled' ? 'active' : record.state }; record.health = { ...result, checkedAt: new Date().toISOString() }; this.persist(); return record.health; } catch (error) { record.health = { ok: false, detail: error instanceof Error ? error.message : String(error), checkedAt: new Date().toISOString() }; this.persist(); return record.health; } }
+  /** Restore only plugins that a human previously enabled. A startup failure is
+   * contained to the one plugin and records `failed`; it never stops the hive. */
+  async restoreEnabled(): Promise<void> {
+    for (const record of this.list().filter((candidate) => candidate.state === 'enabled')) {
+      record.state = 'installed';
+      await this.enable(record.manifest.id, { reviewedHighRisk: true });
+    }
+  }
   emit(type: string, payload: unknown, actorId?: string): void { this.events.emit({ id: randomUUID(), type, ts: Date.now(), actorId, payload }); }
   toolList(): Omit<RegisteredTool, 'run'>[] { return [...this.tools.values()].map(({ run: _run, ...tool }) => tool); }
   async invokeTool(id: string, input: unknown): Promise<unknown> { const tool = this.tools.get(id); if (!tool) throw new Error('unknown plugin tool'); return tool.run(input); }
@@ -106,6 +114,6 @@ export class PluginRuntime {
   private dataDir(id: string): string { const path = join(this.root, 'data', id); mkdirSync(path, { recursive: true }); return path; }
   private removeContributions(id: string): void { for (const [toolId, tool] of this.tools) if (tool.pluginId === id) this.tools.delete(toolId); }
   private fail(record: PluginRecord, error: string): { ok: false; error: string } { this.removeContributions(record.manifest.id); this.active.delete(record.manifest.id); record.state = 'failed'; record.lastError = error.slice(0, 1000); this.persist(); this.emit('plugin.failed', { id: record.manifest.id, error: record.lastError }); return { ok: false, error: record.lastError }; }
-  private load(): void { try { const values = JSON.parse(readFileSync(this.statePath, 'utf8')); if (Array.isArray(values)) for (const record of values) { const parsed = validatePluginManifest(record?.manifest); if (parsed.ok && typeof record.state === 'string') this.records.set(parsed.manifest.id, { ...record, manifest: parsed.manifest, state: record.state === 'enabled' ? 'disabled' : record.state }); } } catch { /* first start or corrupt metadata: no executable is loaded */ } }
+  private load(): void { try { const values = JSON.parse(readFileSync(this.statePath, 'utf8')); if (Array.isArray(values)) for (const record of values) { const parsed = validatePluginManifest(record?.manifest); if (parsed.ok && typeof record.state === 'string') this.records.set(parsed.manifest.id, { ...record, manifest: parsed.manifest }); } } catch { /* first start or corrupt metadata: no executable is loaded */ } }
   private persist(): void { mkdirSync(dirname(this.statePath), { recursive: true }); const temporary = `${this.statePath}.tmp`; writeFileSync(temporary, JSON.stringify(this.list(), null, 2)); renameSync(temporary, this.statePath); }
 }

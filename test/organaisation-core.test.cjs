@@ -47,6 +47,16 @@ test('plugin lifecycle is reviewed, permission-gated, isolated, and uninstallabl
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('a human-enabled plugin restores after restart', async () => {
+  const root = temp('org-plugin-restore-'); const stage = join(root, 'stage'); mkdirSync(stage, { recursive: true });
+  try {
+    writeFileSync(join(stage, 'plugin.json'), JSON.stringify({ spec: 'organaisation/plugin@1', id: 'local.restore-tool', name: 'Restore Tool', version: '0.1.0', description: 'Restoration test', entry: 'index.js', permissions: [], contributes: { tools: ['restore'] } }));
+    writeFileSync(join(stage, 'index.js'), `module.exports = { activate(ctx) { ctx.tools.register({ id: 'restore', run: () => 'restored' }); } };`);
+    const first = new PluginRuntime(root); first.discover(stage); first.approve('local.restore-tool'); first.install('local.restore-tool', stage); assert.equal((await first.enable('local.restore-tool', { reviewedHighRisk: false })).ok, true);
+    const restarted = new PluginRuntime(root); await restarted.restoreEnabled(); assert.equal(await restarted.invokeTool('restore', {}), 'restored');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('memory is persisted, scope-filtered, candidate-approved, and superseded', () => {
   const root = temp('org-memory-');
   try {
