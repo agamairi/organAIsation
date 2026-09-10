@@ -83,7 +83,10 @@ export class HookServer {
     /** Optional observer of every hook boundary (agentId, event, message). The
      *  worker inbox-wake watchdog (workerWake.ts) feeds on this to learn when an
      *  agent is parked on a permission/HITL prompt so it never types into it. */
-    private onEvent?: (agentId: string | undefined, event: string, message: string | undefined) => void
+    private onEvent?: (agentId: string | undefined, event: string, message: string | undefined) => void,
+    /** Bounded, scoped Memory V2 prefetch. It is optional so the existing hook
+     * bridge remains independently testable and operational without the addon. */
+    private getRelevantMemory?: (agentId: string, prompt: string, projectId?: string) => string | null
   ) {}
 
   start(): void {
@@ -337,12 +340,18 @@ export class HookServer {
       }
     }
 
-    if (steer || roster || goal) {
+    // Memory V2 is retrieved narrowly at turn boundaries, never appended as a
+    // transcript dump. Source labels make its provenance clear to the agent.
+    const relevantMemory = (event === 'SessionStart' || event === 'UserPromptSubmit') && agentId
+      ? this.getRelevantMemory?.(agentId, p.prompt ?? '', p.cwd)
+      : null;
+
+    if (steer || roster || goal || relevantMemory) {
       this.emit(agentId, event, p);
       return {
         hookSpecificOutput: {
           hookEventName: event,
-          additionalContext: [roster, goal, steer].filter(Boolean).join('\n\n')
+          additionalContext: [roster, goal, relevantMemory, steer].filter(Boolean).join('\n\n')
         }
       };
     }

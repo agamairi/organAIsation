@@ -567,6 +567,31 @@ export interface PreservedWorktreeSnapshot {
 const api = {
   version: __APP_VERSION__,
 
+  // ─── OrganAIsation Core ─────────────────────────────────────────────────
+  // Provider-neutral core APIs. These are intentionally separate from the pixel
+  // office so another renderer can consume the same fleet/task/plugin/memory data.
+  organisationFacade: (): Promise<unknown> => ipcRenderer.invoke('org:facade'),
+  organisationImportRoster: (path: string): Promise<unknown> => ipcRenderer.invoke('org:roster:importFile', path),
+  organisationMemoryRetrieve: (query: unknown): Promise<unknown> => ipcRenderer.invoke('org:memory:retrieve', query),
+  organisationMemoryPropose: (candidate: unknown): Promise<unknown> => ipcRenderer.invoke('org:memory:propose', candidate),
+  organisationMemoryDecide: (id: string, approve: boolean): Promise<unknown> => ipcRenderer.invoke('org:memory:decide', id, approve),
+  organisationSkillsMetadata: (): Promise<unknown> => ipcRenderer.invoke('org:skills:metadata'),
+  organisationSkillLoad: (id: string): Promise<unknown> => ipcRenderer.invoke('org:skills:load', id),
+  organisationSkillPropose: (proposal: unknown): Promise<unknown> => ipcRenderer.invoke('org:skills:propose', proposal),
+  organisationSkillDecide: (id: string, approve: boolean): Promise<unknown> => ipcRenderer.invoke('org:skills:decide', id, approve),
+  organisationPlugins: (): Promise<unknown> => ipcRenderer.invoke('org:plugins:list'),
+  organisationPluginDiscover: (stagePath: string): Promise<unknown> => ipcRenderer.invoke('org:plugins:discover', stagePath),
+  organisationPluginApprove: (id: string): Promise<unknown> => ipcRenderer.invoke('org:plugins:approve', id),
+  organisationPluginInstall: (id: string, stagePath: string): Promise<unknown> => ipcRenderer.invoke('org:plugins:install', id, stagePath),
+  organisationPluginEnable: (id: string, reviewedHighRisk: boolean): Promise<unknown> => ipcRenderer.invoke('org:plugins:enable', id, { reviewedHighRisk }),
+  organisationPluginDisable: (id: string): Promise<unknown> => ipcRenderer.invoke('org:plugins:disable', id),
+  organisationPluginUninstall: (id: string): Promise<unknown> => ipcRenderer.invoke('org:plugins:uninstall', id),
+  organisationPluginHealth: (id: string): Promise<unknown> => ipcRenderer.invoke('org:plugins:health', id),
+  organisationPluginProposal: (input: unknown): Promise<unknown> => ipcRenderer.invoke('org:pluginFactory:propose', input),
+  piPackages: (agentId?: string): Promise<unknown> => ipcRenderer.invoke('org:pi:list', agentId),
+  piPackageRequest: (agentId: string, source: string): Promise<unknown> => ipcRenderer.invoke('org:pi:request', agentId, source),
+  piPackageConfirm: (agentId: string, source: string): Promise<unknown> => ipcRenderer.invoke('org:pi:confirm', agentId, source),
+
   // ─── Analytics ───────────────────────────────────────────────────────────
   /** Count ONE human-sent message (TELEMETRY.md → `message_sent`). Carries a
    *  surface name and nothing else — no text, no length, no agent id — and main

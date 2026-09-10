@@ -85,6 +85,11 @@ import { toolCatalog, type ToolStatus } from '../shared/toolCatalog';
 import { listLocalSkills, loadCatalog, installSkill, uninstallSkill, type LocalSkill } from './skills';
 import { loadHero } from './hero';
 import { loadModelCatalog } from './modelCatalog';
+import { MemoryV2Service } from './organai/memoryV2';
+import { PluginRuntime } from './organai/pluginRuntime';
+import { SkillRuntime } from './organai/skillsV2';
+import { PiPackageBridge, proposePluginScaffold } from './organai/factory';
+import { validateOrganisationRoster, rosterAgentToHireDraft } from '../shared/organaisation';
 import {
   CODEX_REMOTE_SOCKET_RELATIVE,
   codexRemoteAliasPath,
@@ -303,7 +308,14 @@ const hookServer = new HookServer(
   control,
   breaker,
   standingGoalFromRoster,
-  (agentId, event, message) => workerWake.noteHook(agentId, event, message)
+  (agentId, event, message) => workerWake.noteHook(agentId, event, message),
+  (agentId, prompt, projectId) => {
+    const services = organai();
+    if (!services) return null;
+    const hits = services.memory.preTurn({ query: prompt || 'current work', agentId, projectId, includeCompany: true, includeFounder: true, limit: 6, budgetChars: 4_000 });
+    if (!hits.length) return null;
+    return `<relevant-memory>\n${hits.map((hit) => `[${hit.label}; ${hit.source}] ${hit.content}`).join('\n')}\n</relevant-memory>`;
+  }
 );
 const memory = new MemoryManager(
   () => readConfig().harnessHome,
@@ -333,6 +345,26 @@ const reflector = new MemoryReflector(
   reflectSettings,
   (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
 );
+/** OrganAIsation Core sits beside, rather than replaces, existing hive memory and
+ * skills. Its root follows harnessHome so alternate renderers can use identical
+ * services without reaching into Pixi state. */
+let organaiServices: { home: string; memory: MemoryV2Service; skills: SkillRuntime; plugins: PluginRuntime; pi: PiPackageBridge } | null = null;
+function organai() {
+  const home = readConfig().harnessHome;
+  if (!home) return null;
+  const resolvedHome = resolve(home);
+  if (organaiServices?.home === resolvedHome) return organaiServices;
+  try { organaiServices?.memory.close(); } catch { /* home switch is best-effort */ }
+  const root = join(resolvedHome, 'organai');
+  const memoryV2 = new MemoryV2Service(join(root, 'memory-v2'));
+  const skillsV2 = new SkillRuntime(root);
+  const plugins = new PluginRuntime(root, {
+    memory: { search: (query) => memoryV2.retrieve({ query, includeCompany: true, includeFounder: true }), write: (entry) => memoryV2.write(entry as Parameters<MemoryV2Service['write']>[0]) },
+    skills: { metadata: () => skillsV2.metadata(), propose: (proposal) => skillsV2.propose(proposal as Parameters<SkillRuntime['propose']>[0]) }
+  });
+  organaiServices = { home: resolvedHome, memory: memoryV2, skills: skillsV2, plugins, pi: new PiPackageBridge(root) };
+  return organaiServices;
+}
 // Durable harness state (SQLite, main process). Phase A: window bounds (kv) +
 // net-new command history. Opened in whenReady, closed in the teardown blocks.
 const persist = new PersistStore();
@@ -3448,6 +3480,63 @@ ipcMain.on('roster:readSync', (evt) => { evt.returnValue = roster.read(); });
 ipcMain.on('config:homeSync', (evt) => { evt.returnValue = readConfig().harnessHome ?? null; });
 ipcMain.handle('roster:read', () => roster.read());
 ipcMain.handle('roster:write', (_evt, snap: unknown) => roster.write(snap));
+
+// ─── OrganAIsation Core facade ─────────────────────────────────────────────
+// These IPC handlers deliberately expose services rather than renderer state.
+// The pixel office can consume them incrementally; a future professional shell
+// can use the same contract without importing Pixi components.
+ipcMain.handle('org:facade', () => {
+  const services = organai();
+  return {
+    fleet: hive.registry(), tasks: hive.tasks(), approvals: Object.fromEntries(Object.keys(hive.registry().agents).map((id) => [id, control.snapshot(id)])),
+    memory: services ? { candidates: services.memory.candidates() } : { candidates: [] },
+    skills: services ? services.skills.metadata() : [], plugins: services ? services.plugins.list() : [],
+    telemetry: telemetry.snapshot(), messages: hive.voiceMessages({ limit: 50 })
+  };
+});
+ipcMain.handle('org:roster:importFile', (_evt, path: unknown) => {
+  if (typeof path !== 'string' || !path.trim()) return { ok: false, error: 'roster file path is required' };
+  try {
+    if (statSync(path).size > 512 * 1024) return { ok: false, error: 'roster file is too large' };
+    const parsed = validateOrganisationRoster(JSON.parse(readFileSync(path, 'utf8')));
+    if (!parsed.ok || !parsed.roster) return { ok: false, error: parsed.errors.join('; ') };
+    // Return drafts only. The renderer must present these in Add Agent and the
+    // existing human Spawn click remains the only process-creation gate.
+    return { ok: true, roster: parsed.roster, drafts: parsed.roster.agents.map(rosterAgentToHireDraft), requiresHumanReview: true };
+  } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
+});
+ipcMain.handle('org:memory:retrieve', (_evt, query: unknown) => {
+  const services = organai(); if (!services || !query || typeof query !== 'object') return [];
+  return services.memory.retrieve(query as Parameters<MemoryV2Service['retrieve']>[0]);
+});
+ipcMain.handle('org:memory:propose', (_evt, candidate: unknown) => {
+  const services = organai(); return services && candidate && typeof candidate === 'object' ? services.memory.propose(candidate as Parameters<MemoryV2Service['propose']>[0]) : { ok: false, error: 'invalid memory candidate or no harness home' };
+});
+ipcMain.handle('org:memory:decide', (_evt, id: unknown, approve: unknown) => {
+  const services = organai(); return services && typeof id === 'string' && typeof approve === 'boolean' ? services.memory.decideCandidate(id, approve) : { ok: false, error: 'invalid decision or no harness home' };
+});
+ipcMain.handle('org:skills:metadata', () => organai()?.skills.metadata() ?? []);
+ipcMain.handle('org:skills:load', (_evt, id: unknown) => typeof id === 'string' ? organai()?.skills.load(id) ?? null : null);
+ipcMain.handle('org:skills:propose', (_evt, proposal: unknown) => {
+  const services = organai(); return services && proposal && typeof proposal === 'object' ? services.skills.propose(proposal as Parameters<SkillRuntime['propose']>[0]) : { ok: false, error: 'invalid skill proposal or no harness home' };
+});
+ipcMain.handle('org:skills:decide', (_evt, id: unknown, approve: unknown) => {
+  const services = organai(); return services && typeof id === 'string' && typeof approve === 'boolean' ? services.skills.decide(id, approve) : { ok: false, error: 'invalid decision or no harness home' };
+});
+ipcMain.handle('org:plugins:list', () => organai()?.plugins.list() ?? []);
+ipcMain.handle('org:plugins:discover', (_evt, stagePath: unknown) => typeof stagePath === 'string' ? organai()?.plugins.discover(stagePath) ?? { ok: false, error: 'no harness home' } : { ok: false, error: 'invalid stage path' });
+ipcMain.handle('org:plugins:approve', (_evt, id: unknown) => typeof id === 'string' ? organai()?.plugins.approve(id) ?? { ok: false, error: 'no harness home' } : { ok: false, error: 'invalid plugin id' });
+ipcMain.handle('org:plugins:install', (_evt, id: unknown, stagePath: unknown) => typeof id === 'string' && typeof stagePath === 'string' ? organai()?.plugins.install(id, stagePath) ?? { ok: false, error: 'no harness home' } : { ok: false, error: 'invalid installation request' });
+ipcMain.handle('org:plugins:enable', (_evt, id: unknown, confirmation: unknown) => typeof id === 'string' ? organai()?.plugins.enable(id, { reviewedHighRisk: (confirmation as { reviewedHighRisk?: unknown })?.reviewedHighRisk === true }) ?? Promise.resolve({ ok: false, error: 'no harness home' }) : Promise.resolve({ ok: false, error: 'invalid plugin id' }));
+ipcMain.handle('org:plugins:disable', (_evt, id: unknown) => typeof id === 'string' ? organai()?.plugins.disable(id) ?? Promise.resolve({ ok: false, error: 'no harness home' }) : Promise.resolve({ ok: false, error: 'invalid plugin id' }));
+ipcMain.handle('org:plugins:uninstall', (_evt, id: unknown) => typeof id === 'string' ? organai()?.plugins.uninstall(id) ?? Promise.resolve({ ok: false, error: 'no harness home' }) : Promise.resolve({ ok: false, error: 'invalid plugin id' }));
+ipcMain.handle('org:plugins:health', (_evt, id: unknown) => typeof id === 'string' ? organai()?.plugins.health(id) ?? Promise.resolve(null) : Promise.resolve(null));
+ipcMain.handle('org:pluginFactory:propose', (_evt, input: unknown) => {
+  const services = organai(); return services && input && typeof input === 'object' ? proposePluginScaffold(join(services.home, 'organai', 'staged'), input as Parameters<typeof proposePluginScaffold>[1]) : { ok: false, error: 'invalid proposal or no harness home' };
+});
+ipcMain.handle('org:pi:list', (_evt, agentId: unknown) => organai()?.pi.list(typeof agentId === 'string' ? agentId : undefined) ?? []);
+ipcMain.handle('org:pi:request', (_evt, agentId: unknown, source: unknown) => organai()?.pi.request(agentId, source) ?? { ok: false, error: 'no harness home' });
+ipcMain.handle('org:pi:confirm', (_evt, agentId: unknown, source: unknown) => typeof agentId === 'string' && typeof source === 'string' ? organai()?.pi.confirm(agentId, source) ?? { ok: false, error: 'no harness home' } : { ok: false, error: 'invalid Pi package confirmation' });
 
 // ─── IPC: hive (multi-agent coordination) ───────────────────────────────────
 ipcMain.handle('hive:registry', () => hive.registry());

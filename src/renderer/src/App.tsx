@@ -24,6 +24,7 @@ import { useAppTheme, toggleAppTheme } from '@/design/theme';
 import { SettingsModal, type Section as SettingsSection } from '@/components/SettingsModal';
 import { PixelPanel } from '@/components/PixelPanel';
 import { PixelButton } from '@/components/PixelButton';
+import { OrganisationPanel } from '@/components/OrganisationPanel';
 import { Icon } from '@/components/Icon';
 import { SidebarSplitter } from '@/components/SidebarSplitter';
 import { acquireTerminal, notifyThemeChangeAll } from '@/components/terminalPool';
@@ -73,6 +74,7 @@ export function App() {
     return false;
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [organisationOpen, setOrganisationOpen] = useState(false);
   /** Which tab Settings opens on. Set by a `cth:open-settings` deep link, reset
    *  to undefined (→ General) whenever the modal is opened the normal way. */
   const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined);
@@ -362,6 +364,13 @@ export function App() {
         >
           <GearGlyph />
         </button>
+        <button
+          className="cth-titlebar-nodrag cth-tip"
+          onClick={() => setOrganisationOpen(true)}
+          data-tip="OrganAIsation Core"
+          aria-label="Open OrganAIsation Core"
+          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 28, padding: 0, background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', border: 'none', borderRadius: 2, cursor: 'pointer', color: 'var(--cth-ink-900)', fontSize: 9, fontFamily: 'var(--cth-font-display)' }}
+        >ORG</button>
         {/* Fullscreen. The title bar is chrome, not canvas, so these two use
             clean stroke icons rather than the 16x16 pixel set the rest of the UI
             is drawn in — at 16-18px a pixel-grid glyph reads as a rendering
@@ -401,6 +410,7 @@ export function App() {
         <div style={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative' }}>
           <OfficeFloor />
           <MemoryPanel />
+          {organisationOpen && <OrganisationPanel onClose={() => setOrganisationOpen(false)} />}
           {agentCount === 0 && godStatus === 'booting' && <MichaelBooting />}
           {agentCount === 0 && godStatus !== 'booting' && (
             <div style={{

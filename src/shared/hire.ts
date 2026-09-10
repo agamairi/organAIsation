@@ -23,6 +23,7 @@
 
 import { mcpCatalogEntry } from './mcpCatalog';
 import { MAX_AGENT_TOKEN_CAP } from './tokenCaps';
+import { AGENT_PROVIDER_PRESETS, type AgentProvider } from './agentProvider';
 
 export const HIRE_SPEC_V1 = 'munder-difflin/hire@1';
 
@@ -38,7 +39,7 @@ export const BUNDLED_SKILL_IDS: ReadonlySet<string> = new Set([
 /** Providers a manifest may request ('agy' is accepted as an alias for
  *  'antigravity'). 'custom' is deliberately NOT allowed — it would let a
  *  manifest choose an arbitrary local binary. */
-export type HireProvider = 'claude' | 'antigravity' | 'codex' | 'cursor';
+export type HireProvider = Exclude<AgentProvider, 'custom'>;
 
 export interface HireManifest {
   /** Spec tag; exactly `munder-difflin/hire@1` for this version. */
@@ -91,7 +92,11 @@ export interface HireValidation {
   consentRequired?: string[];
 }
 
-const PROVIDERS: readonly string[] = ['claude', 'antigravity', 'codex', 'cursor'];
+/** Derived from the runtime registry. A portable manifest still cannot select
+ * `custom`, because that could resolve to an arbitrary local executable. */
+const PROVIDERS: readonly HireProvider[] = AGENT_PROVIDER_PRESETS
+  .filter((preset) => preset.id !== 'custom')
+  .map((preset) => preset.id as HireProvider);
 const MAX_BYTES = 64 * 1024;
 
 /** A flag ("-x", "--flag", "--flag=value") or a bare value token that may follow
@@ -193,7 +198,7 @@ export function validateHireManifest(raw: unknown): HireValidation {
   let provider: HireProvider | undefined;
   if (o.provider !== undefined) {
     const p = str(o.provider) ? (o.provider === 'agy' ? 'antigravity' : o.provider) : o.provider;
-    if (str(p) && PROVIDERS.includes(p)) provider = p as HireProvider;
+    if (str(p) && PROVIDERS.includes(p as HireProvider)) provider = p as HireProvider;
     else errors.push(`"provider" must be one of ${PROVIDERS.join(', ')} (or "agy")`);
   }
 
