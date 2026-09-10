@@ -17,6 +17,7 @@
 - `node --test test/organaisation-core.test.cjs` — passed (4 tests).
 - `npm run test:focused` — passed (838 tests).
 - `npm run build` — passed.
+- `npm run dev` — Electron main, preload and renderer all built; the app started successfully and the local broker/telemetry listeners initialized.
 - Generated the supplied startup roster with `bootstrap_roster.py`; validated all 8 agents, including 2 Pi agents, against `organaisation/roster@1`.
 
 ## Important decisions
