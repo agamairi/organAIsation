@@ -45,6 +45,9 @@ import { reduceStatus, clampPercent, isNewer, installerUrl, shouldShowReleaseDro
  */
 
 const REPO = 'chaitanyagiri/munder-difflin';
+// A locally installed fork must never replace itself with an upstream Munder
+// release. Re-enable only after OrganAIsation has its own signed update feed.
+const DISTRIBUTION_UPDATES_ENABLED = false;
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6h
 const FALLBACK_CACHE_MS = 60 * 60 * 1000;     // 1h between releases/latest polls
 
@@ -368,6 +371,7 @@ export function initAutoUpdater(getWebContents: () => WebContents | null): void 
 
   // IPC surface is registered unconditionally so the renderer can always call it.
   ipcMain.handle('update:restartAndInstall', async () => {
+    if (!DISTRIBUTION_UPDATES_ENABLED) return { ok: false, error: 'updates are disabled for this local OrganAIsation build' };
     // Re-entry guard: a restart is already in flight. Firing quitAndInstall a
     // second time hits a native command Squirrel has already disabled and it
     // throws "The command is disabled and cannot be executed", the recurring
@@ -393,10 +397,12 @@ export function initAutoUpdater(getWebContents: () => WebContents | null): void 
     }
   });
   ipcMain.handle('update:checkNow', async () => {
+    if (!DISTRIBUTION_UPDATES_ENABLED) return { ok: false, error: 'updates are disabled for this local OrganAIsation build' };
     if (!app.isPackaged) return { ok: false, error: 'dev build — updates are only checked in packaged apps' };
     return runCheck();
   });
   ipcMain.handle('update:download', async () => {
+    if (!DISTRIBUTION_UPDATES_ENABLED) return { ok: false, error: 'updates are disabled for this local OrganAIsation build' };
     if (!app.isPackaged) return { ok: false, error: 'dev build — updates are only downloaded in packaged apps' };
     return runDownload();
   });
@@ -504,7 +510,7 @@ export function initAutoUpdater(getWebContents: () => WebContents | null): void 
     return { ok: true };
   });
 
-  if (!app.isPackaged) return;
+  if (!app.isPackaged || !DISTRIBUTION_UPDATES_ENABLED) return;
   if (started) return;
   started = true;
 

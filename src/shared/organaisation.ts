@@ -93,8 +93,11 @@ export function validateOrganisationRoster(raw: unknown): RosterValidation {
     const description = text(agent.description, `agents[${index}].description`, errors, 240);
     const memoryProfileId = text(agent.memoryProfileId, `agents[${index}].memoryProfileId`, errors, 80) ?? `agent:${id ?? index}`;
     const autonomyProfileId = text(agent.autonomyProfileId, `agents[${index}].autonomyProfileId`, errors, 80);
-    const tokenCap = agent.tokenCap === undefined ? undefined : (typeof agent.tokenCap === 'number' && Number.isInteger(agent.tokenCap) && agent.tokenCap > 0 && agent.tokenCap <= 10_000_000_000 ? agent.tokenCap : undefined);
-    if (agent.tokenCap !== undefined && tokenCap === undefined) errors.push(`agents[${index}].tokenCap must be a positive integer ≤ 1e10`);
+    // bootstrap_roster.py originally emitted snake_case. Accept that spelling as
+    // a compatibility alias so its practical test roster retains its budgets.
+    const rawTokenCap = agent.tokenCap ?? agent.token_cap;
+    const tokenCap = rawTokenCap === undefined ? undefined : (typeof rawTokenCap === 'number' && Number.isInteger(rawTokenCap) && rawTokenCap > 0 && rawTokenCap <= 10_000_000_000 ? rawTokenCap : undefined);
+    if (rawTokenCap !== undefined && tokenCap === undefined) errors.push(`agents[${index}].tokenCap must be a positive integer ≤ 1e10`);
     if (agent.isolate !== undefined && typeof agent.isolate !== 'boolean') errors.push(`agents[${index}].isolate must be boolean`);
     if (id && agentName && role && goal && knownProviders.has(provider as AgentProvider)) {
       agents.push({ id, name: agentName, kind: 'ai', role, description, goal, provider: provider as AgentProvider, model, reasoning, capabilities: tags(agent.capabilities, `agents[${index}].capabilities`, errors), skillIds: tags(agent.skillIds ?? agent.skills, `agents[${index}].skillIds`, errors), memoryProfileId, autonomyProfileId, tokenCap, isolate: agent.isolate === true });

@@ -11,8 +11,8 @@ export function proposePluginScaffold(root: string, input: { name: unknown; prob
   try {
     mkdirSync(join(stagePath, 'src'), { recursive: true }); mkdirSync(join(stagePath, 'tests'), { recursive: true }); mkdirSync(join(stagePath, 'help'), { recursive: true });
     writeFileSync(join(stagePath, 'plugin.json'), JSON.stringify({ spec: 'organaisation/plugin@1', id: `local.${slug}`, name, version: '0.1.0', description: problem, entry: 'src/index.js', permissions, contributes: { tools: [], commands: [], events: [], ui: [], jobs: [], knowledgeSources: [], memoryProviders: [] } }, null, 2));
-    writeFileSync(join(stagePath, 'src', 'index.js'), `export function activate(ctx) {\n  // Register only declared, least-privilege capabilities here.\n  ctx.logger.info('staged plugin activated for review self-test');\n}\n\nexport function deactivate() {}\n`);
-    writeFileSync(join(stagePath, 'tests', 'plugin.test.js'), `import test from 'node:test';\ntest('plugin scaffold has a manifest', () => {});\n`);
+    writeFileSync(join(stagePath, 'src', 'index.js'), `module.exports = {\n  activate(ctx) {\n    // Register only declared, least-privilege capabilities here.\n    ctx.logger.info('staged plugin activated for review self-test');\n  },\n  deactivate() {}\n};\n`);
+    writeFileSync(join(stagePath, 'tests', 'plugin.test.js'), `'use strict';\nconst test = require('node:test');\ntest('plugin scaffold has a manifest', () => {});\n`);
     writeFileSync(join(stagePath, 'help', 'index.md'), `# ${name}\n\n${problem}\n`);
     writeFileSync(join(stagePath, 'README.md'), `# ${name}\n\nStaged OrganAIsation plugin. It is not installed or enabled until a human approves the proposal.\n`);
     writeFileSync(join(stagePath, 'CHANGELOG.md'), '# Changelog\n\n## 0.1.0\n\n- Initial staged proposal.\n');

@@ -98,6 +98,14 @@ import {
   withCodexRemoteArgs
 } from '../shared/codexRemote';
 
+const APP_DISPLAY_NAME = 'OrganAIsation';
+const APP_PROTOCOL = 'organaisation';
+// This fork is a separate application. Pin userData explicitly so dev builds,
+// packaged builds and future package-name changes can never reopen Munder's
+// config, databases, browser storage or updater state.
+app.setName(APP_DISPLAY_NAME);
+app.setPath('userData', join(app.getPath('appData'), APP_DISPLAY_NAME));
+
 const isDev = !!process.env.ELECTRON_RENDERER_URL;
 
 // Keep the main process alive on an unexpected throw/rejection. The harness is a
@@ -2244,10 +2252,10 @@ async function handleHireLink(link: string): Promise<void> {
 // exe+args form or the registration points at electron.exe with no entry.
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient('munderdifflin', process.execPath, [resolve(process.argv[1])]);
+    app.setAsDefaultProtocolClient(APP_PROTOCOL, process.execPath, [resolve(process.argv[1])]);
   }
 } else {
-  app.setAsDefaultProtocolClient('munderdifflin');
+  app.setAsDefaultProtocolClient(APP_PROTOCOL);
 }
 
 // Deep links on Windows/Linux arrive as the argv of a SECOND process — take the
@@ -2264,7 +2272,7 @@ if (!gotInstanceLock) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
     }
-    const link = argv.find((a) => a.startsWith('munderdifflin://'));
+    const link = argv.find((a) => a.startsWith(`${APP_PROTOCOL}://`));
     if (link) void handleHireLink(link);
   });
 }
@@ -2324,7 +2332,7 @@ function createWindow(opts: { floor?: boolean } = {}): BrowserWindow {
     ...(geom && geom.x !== undefined && geom.y !== undefined ? { x: geom.x, y: geom.y } : {}),
     minWidth: MIN_WIN.width,
     minHeight: MIN_WIN.height,
-    title: isFloor ? 'Munder Difflin — Floor' : 'Munder Difflin',
+    title: isFloor ? `${APP_DISPLAY_NAME} — Floor` : APP_DISPLAY_NAME,
     backgroundColor: '#FFF8E7',
     titleBarStyle: 'hiddenInset',
     show: false,
@@ -3502,6 +3510,16 @@ ipcMain.handle('org:roster:importFile', (_evt, path: unknown) => {
     if (!parsed.ok || !parsed.roster) return { ok: false, error: parsed.errors.join('; ') };
     // Return drafts only. The renderer must present these in Add Agent and the
     // existing human Spawn click remains the only process-creation gate.
+    return { ok: true, roster: parsed.roster, drafts: parsed.roster.agents.map(rosterAgentToHireDraft), requiresHumanReview: true };
+  } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
+});
+ipcMain.handle('org:roster:startup', () => {
+  try {
+    const path = app.isPackaged
+      ? join(process.resourcesPath, 'organaisation.roster.json')
+      : join(app.getAppPath(), 'resources', 'organaisation.roster.json');
+    const parsed = validateOrganisationRoster(JSON.parse(readFileSync(path, 'utf8')));
+    if (!parsed.ok || !parsed.roster) return { ok: false, error: parsed.errors.join('; ') };
     return { ok: true, roster: parsed.roster, drafts: parsed.roster.agents.map(rosterAgentToHireDraft), requiresHumanReview: true };
   } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
 });
@@ -5385,7 +5403,7 @@ app.whenReady().then(() => {
   void loadModelCatalog(MODEL_CATALOG_CACHE()).catch(() => { /* never fatal */ });
 
   // A cold-start deep link (Windows/Linux) rides in on OUR argv.
-  const startupHireLink = process.argv.find((a) => a.startsWith('munderdifflin://'));
+  const startupHireLink = process.argv.find((a) => a.startsWith(`${APP_PROTOCOL}://`));
   if (startupHireLink) void handleHireLink(startupHireLink);
 
   // Hand every spawned agent the path to the Slack reply discovery file via the

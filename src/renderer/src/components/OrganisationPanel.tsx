@@ -31,17 +31,25 @@ export function OrganisationPanel({ onClose }: { onClose: () => void }) {
     useStore.getState().setAddAgentOpen(true);
     setNotice(`Loaded ${result.drafts.length} employees for human review. No agents were spawned.`);
   };
+  const reviewStartupRoster = async () => {
+    const result = await window.cth.organisationStartupRoster() as { ok?: boolean; error?: string; drafts?: unknown[] };
+    if (!result.ok || !result.drafts) { setNotice(result.error ?? 'Startup roster could not be loaded'); return; }
+    useStore.getState().enqueuePendingHires(result.drafts as HireManifest[]);
+    useStore.getState().setAddAgentOpen(true);
+    setNotice(`Loaded all ${result.drafts.length} startup employees for human review. No agents were spawned.`);
+  };
   return (
     <div style={{ position: 'absolute', zIndex: 55, top: 14, right: 14, width: 440, maxHeight: 'calc(100% - 28px)', overflow: 'auto' }}>
-      <PixelPanel variant="dialog" title="ORGAN AISATION CORE" noPadding>
+      <PixelPanel variant="dialog" title="OrganAIsation" noPadding>
         <div style={{ padding: 14, display: 'grid', gap: 14, fontSize: 12, lineHeight: 1.45 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
             <span>Extensible organization services. Plugin activation and Pi package installation always require human review.</span>
             <PixelButton size="sm" variant="secondary" onClick={onClose}>close</PixelButton>
           </div>
           <section>
-            <strong>Organisation roster</strong>
+            <strong>OrganAIsation roster</strong>
             <p style={{ margin: '4px 0 8px', color: 'var(--cth-ink-600)' }}>Import an <code>organaisation/roster@1</code> JSON file into the existing human-reviewed Add Agent queue.</p>
+            <PixelButton size="sm" variant="primary" onClick={() => void reviewStartupRoster()}>review startup roster (8)</PixelButton>
             <div style={{ display: 'flex', gap: 6 }}>
               <input value={rosterPath} onChange={(event) => setRosterPath(event.target.value)} placeholder="Absolute roster JSON path" style={{ flex: 1 }} />
               <PixelButton size="sm" variant="primary" onClick={() => void importRoster()} disabled={!rosterPath.trim()}>review roster</PixelButton>
@@ -55,7 +63,7 @@ export function OrganisationPanel({ onClose }: { onClose: () => void }) {
           </section>
           <section>
             <strong>Pi packages (agent-scoped, not application plugins)</strong>
-            <p style={{ margin: '4px 0 8px', color: 'var(--cth-ink-600)' }}>A Pi package is installed only for the named Pi agent after you confirm it. It does not extend the Munder application.</p>
+            <p style={{ margin: '4px 0 8px', color: 'var(--cth-ink-600)' }}>A Pi package is installed only for the named Pi agent after you confirm it. It does not extend the OrganAIsation application.</p>
             <div style={{ display: 'grid', gap: 6 }}>
               <input value={agentId} onChange={(event) => setAgentId(event.target.value)} placeholder="Pi agent id" />
               <input value={source} onChange={(event) => setSource(event.target.value)} placeholder="Package source" />

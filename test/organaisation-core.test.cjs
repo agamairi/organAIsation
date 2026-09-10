@@ -20,18 +20,19 @@ test('roster uses runtime providers and represents Pi without a second allowlist
   const result = validateOrganisationRoster({
     spec: 'organaisation/roster@1', name: 'Startup', orchestrator: 'kevin', agents: [{
       id: 'kevin', name: 'Kevin', role: 'Documentation Librarian', goal: 'Keep knowledge accurate.',
-      provider: 'pi', capabilities: ['docs', 'knowledge']
+      provider: 'pi', capabilities: ['docs', 'knowledge'], token_cap: 123456
     }]
   });
   assert.equal(result.ok, true);
   assert.equal(result.roster.agents[0].provider, 'pi');
+  assert.equal(result.roster.agents[0].tokenCap, 123456);
 });
 
 test('plugin lifecycle is reviewed, permission-gated, isolated, and uninstallable', async () => {
   const root = temp('org-plugin-'); const stage = join(root, 'stage'); mkdirSync(stage, { recursive: true });
   try {
     writeFileSync(join(stage, 'plugin.json'), JSON.stringify({ spec: 'organaisation/plugin@1', id: 'local.hello-tool', name: 'Hello Tool', version: '0.1.0', description: 'A harmless test tool', entry: 'index.js', permissions: ['storage.plugin.write'], contributes: { tools: ['hello'], events: ['hello.event'] } }));
-    writeFileSync(join(stage, 'index.js'), `module.exports = { activate(ctx) { ctx.tools.register({ id: 'hello', run: (input) => 'hello ' + input }); ctx.events.on('hello.event', () => ctx.logger.info('heard')); }, deactivate() {} };`);
+    writeFileSync(join(stage, 'index.js'), `module.exports = { activate(ctx) { globalThis.__orgEventCount = 0; ctx.tools.register({ id: 'hello', run: (input) => 'hello ' + input }); ctx.events.on('hello.event', () => { globalThis.__orgEventCount += 1; }); }, deactivate() {} };`);
     const runtime = new PluginRuntime(root);
     assert.equal(runtime.discover(stage).ok, true);
     assert.equal((await runtime.enable('local.hello-tool', { reviewedHighRisk: false })).ok, false, 'staged code cannot auto-enable');
@@ -41,9 +42,28 @@ test('plugin lifecycle is reviewed, permission-gated, isolated, and uninstallabl
     assert.equal(enabled.ok, true, enabled.error);
     assert.equal(await runtime.invokeTool('hello', 'world'), 'hello world');
     runtime.emit('hello.event', {});
+    assert.equal(globalThis.__orgEventCount, 1);
     assert.equal((await runtime.disable('local.hello-tool')).ok, true);
+    runtime.emit('hello.event', {});
+    assert.equal(globalThis.__orgEventCount, 1, 'disabled plugin listeners are detached');
     assert.equal((await runtime.uninstall('local.hello-tool')).ok, true);
     assert.equal(runtime.list().length, 0);
+    delete globalThis.__orgEventCount;
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('plugin install rejects a manifest changed after review', () => {
+  const root = temp('org-plugin-review-'); const stage = join(root, 'stage'); mkdirSync(stage, { recursive: true });
+  try {
+    const manifest = { spec: 'organaisation/plugin@1', id: 'local.review-lock', name: 'Review Lock', version: '0.1.0', description: 'Review integrity test', entry: 'index.js', permissions: [], contributes: { tools: [] } };
+    writeFileSync(join(stage, 'plugin.json'), JSON.stringify(manifest));
+    writeFileSync(join(stage, 'index.js'), 'module.exports = { activate() {} };');
+    const runtime = new PluginRuntime(root);
+    assert.equal(runtime.discover(stage).ok, true);
+    assert.equal(runtime.approve('local.review-lock').ok, true);
+    manifest.permissions = ['process.spawn'];
+    writeFileSync(join(stage, 'plugin.json'), JSON.stringify(manifest));
+    assert.match(runtime.install('local.review-lock', stage).error, /changed after review/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -92,5 +112,6 @@ test('skills require human approval and retain prior versions; Pi packages remai
     const pi = new PiPackageBridge(root); assert.equal(pi.request('kevin', 'npm:example-pi-skill').ok, true); assert.equal(pi.list('kevin')[0].enabled, false); assert.equal(pi.confirm('kevin', 'npm:example-pi-skill').ok, true); assert.equal(pi.list('kevin')[0].enabled, true);
     const stage = proposePluginScaffold(join(root, 'staged'), { name: 'Research helper', problem: 'Need a reviewable integration.', requestedPermissions: ['network.fetch'], targetAgents: ['ryan'] });
     assert.equal(stage.ok, true); assert.equal(readFileSync(join(stage.stagePath, 'PROPOSAL.md'), 'utf8').includes('Rollback'), true);
+    assert.equal(readFileSync(join(stage.stagePath, 'src', 'index.js'), 'utf8').includes('module.exports'), true);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

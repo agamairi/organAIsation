@@ -572,6 +572,7 @@ const api = {
   // office so another renderer can consume the same fleet/task/plugin/memory data.
   organisationFacade: (): Promise<unknown> => ipcRenderer.invoke('org:facade'),
   organisationImportRoster: (path: string): Promise<unknown> => ipcRenderer.invoke('org:roster:importFile', path),
+  organisationStartupRoster: (): Promise<unknown> => ipcRenderer.invoke('org:roster:startup'),
   organisationMemoryRetrieve: (query: unknown): Promise<unknown> => ipcRenderer.invoke('org:memory:retrieve', query),
   organisationMemoryPropose: (candidate: unknown): Promise<unknown> => ipcRenderer.invoke('org:memory:propose', candidate),
   organisationMemoryDecide: (id: string, approve: boolean): Promise<unknown> => ipcRenderer.invoke('org:memory:decide', id, approve),

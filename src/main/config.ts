@@ -445,7 +445,7 @@ const DEFAULTS: HarnessConfig = {
   missions: [OPS_STANDUP_MISSION],
   notifications: false,
   strongKeepalive: false,
-  autoUpdate: true,
+  autoUpdate: false,
   telemetryEnabled: true,
   multiWindow: true,
   tvShowOffices: false,
