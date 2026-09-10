@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { PixelButton } from './PixelButton';
 import { PixelPanel } from './PixelPanel';
+import { useStore } from '@/store/store';
+import type { HireManifest } from '@shared/hire';
 
 type Plugin = { manifest: { id: string; name: string; version: string; permissions: string[] }; state: string; lastError?: string };
 type PiBinding = { agentId: string; source: string; enabled: boolean; requestedAt: string };
@@ -13,12 +15,22 @@ export function OrganisationPanel({ onClose }: { onClose: () => void }) {
   const [pi, setPi] = useState<PiBinding[]>([]);
   const [agentId, setAgentId] = useState('');
   const [source, setSource] = useState('');
+  const [rosterPath, setRosterPath] = useState('');
   const [notice, setNotice] = useState('');
   const refresh = async () => {
     try { setPlugins(await window.cth.organisationPlugins() as Plugin[]); setPi(await window.cth.piPackages() as PiBinding[]); } catch { setNotice('Unable to load OrganAIsation services. Configure a hive first.'); }
   };
   useEffect(() => { void refresh(); }, []);
   const requestPi = async () => { const result = await window.cth.piPackageRequest(agentId, source) as { ok?: boolean; error?: string }; setNotice(result.ok ? 'Pi package requested. Human confirmation is required before it is enabled.' : result.error ?? 'Request failed'); if (result.ok) { setSource(''); void refresh(); } };
+  const importRoster = async () => {
+    const result = await window.cth.organisationImportRoster(rosterPath) as { ok?: boolean; error?: string; drafts?: unknown[]; requiresHumanReview?: boolean };
+    if (!result.ok || !result.drafts) { setNotice(result.error ?? 'Roster import failed'); return; }
+    // Reuse the established Add Agent review queue. Import produces drafts only;
+    // each employee still needs the existing human Spawn confirmation.
+    useStore.getState().enqueuePendingHires(result.drafts as HireManifest[]);
+    useStore.getState().setAddAgentOpen(true);
+    setNotice(`Loaded ${result.drafts.length} employees for human review. No agents were spawned.`);
+  };
   return (
     <div style={{ position: 'absolute', zIndex: 55, top: 14, right: 14, width: 440, maxHeight: 'calc(100% - 28px)', overflow: 'auto' }}>
       <PixelPanel variant="dialog" title="ORGAN AISATION CORE" noPadding>
@@ -27,6 +39,14 @@ export function OrganisationPanel({ onClose }: { onClose: () => void }) {
             <span>Extensible organization services. Plugin activation and Pi package installation always require human review.</span>
             <PixelButton size="sm" variant="secondary" onClick={onClose}>close</PixelButton>
           </div>
+          <section>
+            <strong>Organisation roster</strong>
+            <p style={{ margin: '4px 0 8px', color: 'var(--cth-ink-600)' }}>Import an <code>organaisation/roster@1</code> JSON file into the existing human-reviewed Add Agent queue.</p>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input value={rosterPath} onChange={(event) => setRosterPath(event.target.value)} placeholder="Absolute roster JSON path" style={{ flex: 1 }} />
+              <PixelButton size="sm" variant="primary" onClick={() => void importRoster()} disabled={!rosterPath.trim()}>review roster</PixelButton>
+            </div>
+          </section>
           <section>
             <strong>Application plugins</strong>
             <div style={{ marginTop: 6, display: 'grid', gap: 5 }}>

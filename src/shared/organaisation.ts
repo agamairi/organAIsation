@@ -109,6 +109,7 @@ export function validateOrganisationRoster(raw: unknown): RosterValidation {
  * review gate and is solely responsible for any later process spawn. */
 export function rosterAgentToHireDraft(agent: ActorProfile) {
   return {
+    spec: 'munder-difflin/hire@1' as const,
     name: agent.name,
     description: agent.role,
     goal: agent.goal,
